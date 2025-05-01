@@ -1,0 +1,70 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <!-- Unique identifier of the plugin. Use your GroupID.ArtifactID -->
+    <id>com.zoho.catalyst_plugin</id> <!-- Used your package from ActionEvent -->
+
+    <!-- Public plugin name in Title Case. -->
+    <name>Catalyst LSK Resolver</name>
+
+    <!-- Vendor information -->
+    <vendor email="support@zoho.com" url="https://www.zoho.com">Zoho</vendor> <!-- Used your vendor info -->
+
+    <!-- Description -->
+    <description><![CDATA[
+    <p>Resolves Logical Seed Key (LSK) placeholders and references within selected XML text by communicating with a backend service.</p>
+    <p>Requires sign-in via GitHub through the Tools menu action.</p>
+    <!-- Add more details, features, usage instructions as needed -->
+  ]]></description>
+
+    <!-- Compatibility with IntelliJ Platform versions (Requires Java 17+) -->
+    <!-- Example: Targets 2023.1 up to the latest 2024.1 patch -->
+    <idea-version since-build="231.8109" until-build="241.*"/>
+
+    <!-- Declare dependencies on platform modules required by the plugin -->
+    <depends>com.intellij.modules.platform</depends> <!-- Core platform APIs -->
+    <depends>com.intellij.modules.lang</depends>     <!-- Language support APIs (like PsiFile) -->
+    <depends>com.intellij.modules.xml</depends>
+
+    <!-- Extension points defined by the plugin. -->
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Notification Group -->
+        <notificationGroup id="CatalystPluginNotifications" displayType="BALLOON"/>
+        <postStartupActivity implementation="com.zoho.catalyst_plugin.startup.PluginStartupActivity"/>
+        <httpRequestHandler implementation="com.zoho.catalyst_plugin.service.OAuthCallbackService"/>
+
+
+        <!-- Settings panel placeholder -->
+        <!-- <applicationConfigurable ... /> -->
+    </extensions>
+
+    <!-- Actions defined by the plugin -->
+    <actions>
+        <!-- 1. Group for Editor Right-Click Menu -->
+        <group id="com.zoho.catalyst_plugin.EditorActionGroup" text="Catalyst LSK" popup="true">
+            <!-- Add this group to the editor's popup menu -->
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </group>
+
+        <!-- 2. Resolve Action (Appears in the Editor Group) -->
+        <action id="com.zoho.catalyst_plugin.actions.ResolveLskAction"
+                class="com.zoho.catalyst_plugin.actions.ResolveLskAction"
+                text="Resolve LSKs in Selection"
+                description="Resolves LSK placeholders in selected XML via backend.">
+            <!-- Place this action inside the editor group -->
+            <add-to-group group-id="com.zoho.catalyst_plugin.EditorActionGroup" anchor="first"/>
+            <!-- Optional keyboard shortcut -->
+            <!-- <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift L"/> -->
+        </action>
+
+        <!-- 3. Sign In Action (Appears in Tools Menu) -->
+        <action id="com.zoho.catalyst_plugin.actions.SignInAction"
+                class="com.zoho.catalyst_plugin.actions.SignInAction"
+                text="Catalyst LSK: Sign In with GitHub..."
+                description="Sign in to the Catalyst LSK backend service using GitHub OAuth.">
+            <!-- Place this action in the main Tools menu -->
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+
+
+    </actions>
+</idea-plugin>
