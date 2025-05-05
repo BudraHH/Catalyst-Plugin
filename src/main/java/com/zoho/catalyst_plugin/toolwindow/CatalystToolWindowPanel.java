@@ -1,27 +1,24 @@
 package com.zoho.catalyst_plugin.toolwindow;
 
-// Swing & AWT Imports
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 
-// IntelliJ Platform UI Imports
 import com.intellij.collaboration.ui.JPanelWithBackground;
 import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBPanel;
-import com.intellij.ui.components.JBScrollPane; // Import JBScrollPane
 import com.intellij.ui.components.JBTextArea;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 
-// IntelliJ Core/Action System Imports
 import com.intellij.ide.DataManager;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
@@ -39,10 +36,8 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.xml.XmlFile;
-import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusConnection;
 
-// Project Specific Imports
 import com.zoho.catalyst_plugin.config.PluginConstants;
 import com.zoho.catalyst_plugin.dto.ApiResponse;
 import com.zoho.catalyst_plugin.listeners.AuthenticationListener;
@@ -50,13 +45,10 @@ import com.zoho.catalyst_plugin.service.AuthService;
 import com.zoho.catalyst_plugin.service.BackendApiService;
 import com.zoho.catalyst_plugin.util.AuthHelper;
 
-// Other Imports
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 
 
 public class CatalystToolWindowPanel implements Disposable {
@@ -66,25 +58,35 @@ public class CatalystToolWindowPanel implements Disposable {
     private final ToolWindow toolWindow;
 
     // --- UI Components ---
-    private JPanel mainPanel; // The root panel with BorderLayout
+    private JPanel mainPanel;
     private JLabel statusLabel;
     private JButton signInButton;
-    private JPanel signInButtonPanel; // Panel to help center the button
+    private JPanel signInButtonPanel;
     private JButton resolveButton;
     private JBTextField moduleNameField;
-    private JPanel formContentPanel; // Panel built by FormBuilder (guidelines, etc.)
-    private JPanel signedInContentPanel; // Panel containing status + formContentPanel
+    private JPanel formContentPanel;
+    private JPanel signedInContentPanel;
     private JBLabel infoLabel;
     private JPanelWithBackground usageGuidelinesPanel;
     private JPanelWithBackground placeholderGuidelinesPanel;
-    private JBLabel rootDirectory;
+    private String defaultModuleName;
+    private String currentModuleName;
+    private JBLabel currentModuleNameLabel;
 
     private MessageBusConnection connection;
+
+    private void setBaseDirectory(String val){
+        this.defaultModuleName = val;
+    }
+
+    private void setCurrentModuleName(String val){
+        this.currentModuleName = val;
+    }
 
     public CatalystToolWindowPanel(@NotNull Project project, @NotNull ToolWindow toolWindow) {
         this.project = project;
         this.toolWindow = toolWindow;
-        this.rootDirectory = new JBLabel(getProjectDirectoryName());
+        this.defaultModuleName = getProjectDirectoryName();
         LOG.debug("Creating CatalystToolWindowPanel for project: {}", project.getName());
         mainPanel = createMainPanel(); // Creates the root panel and child components
         subscribeToAuthChanges();
@@ -99,34 +101,36 @@ public class CatalystToolWindowPanel implements Disposable {
     }
 
     private JPanel createMainPanel() {
-        // 1. Status Label (will be added to signedInContentPanel)
+        // Status Label (will be added to signedInContentPanel)
         statusLabel = new JBLabel("Status: Initializing...");
 
-        // 2. Sign-in Button and its Centering Panel
-        signInButton = new JButton("Sign In with GitHub...\nClick here..");
+        // Sign-in Button and its Centering Panel
+        signInButton = new JButton("Sign In with GitHub");
         signInButton.setToolTipText("Initiate sign in using your GitHub account.");
         signInButton.addActionListener(this::handleSignIn);
         signInButton.setMargin(JBUI.insets(5, 15));
         signInButtonPanel = new JPanel(new GridBagLayout()); // Use GridBagLayout for centering
         signInButtonPanel.add(signInButton); // Add button, GridBagLayout will center by default
 
-        // 3. Components for the Signed-in View
+        this.currentModuleNameLabel = new JBLabel("N/A"); // Initialize
+        currentModuleNameLabel.setForeground(UIUtil.getContextHelpForeground());
+        currentModuleNameLabel.setToolTipText("Relative path of the currently focused XML file.");
+
+        // Components for the Signed-in View
         moduleNameField = new JBTextField();
         moduleNameField.setToolTipText("Optional: Enter a default Module name if not specified in placeholders.");
 
-        resolveButton = new JButton("Resolve LSKs in Selection");
+        resolveButton = new JButton("Resolve");
         resolveButton.setToolTipText("Resolve selected LSK placeholders in the active XML editor using the specified module.");
         resolveButton.addActionListener(this::handleResolveLsk);
 
         infoLabel = new JBLabel("<html><i>Select XML in the editor, specify module (optional), then click 'Resolve'.</i></html>");
         infoLabel.setForeground(UIUtil.getContextHelpForeground());
-        rootDirectory.setForeground(UIUtil.getContextHelpForeground());
 
         // --- Usage Guidelines Panel ---
         usageGuidelinesPanel = new JPanelWithBackground(new BorderLayout());
         usageGuidelinesPanel.setBorder(IdeBorderFactory.createTitledBorder("Usage Guide", false, JBUI.insetsTop(8)));
         JBTextArea usageGuidelinesText = new JBTextArea();
-        // ... (configure usageGuidelinesText as before) ...
         usageGuidelinesText.setEditable(false);
         usageGuidelinesText.setBackground(UIUtil.getPanelBackground());
         usageGuidelinesText.setWrapStyleWord(true);
@@ -134,10 +138,8 @@ public class CatalystToolWindowPanel implements Disposable {
         usageGuidelinesText.setFont(UIUtil.getLabelFont(UIUtil.FontSize.NORMAL));
         usageGuidelinesText.setForeground(UIUtil.getContextHelpForeground());
         usageGuidelinesText.setText(
-                "1. Select XML block with LSK placeholders in the editor.\n" +
-                        "   (e.g., <Element id=\"Table:Column:Module:LogicalID\"/>)\n" +
-                        "2. Optionally enter 'Module Name' above to override default.\n" +
-                        "   (Default module: '" + (getProjectDirectoryName() != null ? getProjectDirectoryName() : "N/A") + "')\n" +
+                "1. Select XML block with LSK placeholders in the editor.\n (e.g., <Element id=\"Table:Column:Module:LogicalID\"/>)\n" +
+                        "2. Optionally enter 'Module Name' above to override default. \n(Default module: '" + (this.currentModuleName != null ? this.currentModuleName : "N/A") + "')\n" +
                         "3. Click 'Resolve LSKs in Selection'.\n" +
                         "4. Selection replaced with resolved values (e.g., ...:123\"/>)."
         );
@@ -156,13 +158,13 @@ public class CatalystToolWindowPanel implements Disposable {
         placeholderGuidelinesText.setForeground(UIUtil.getContextHelpForeground());
         placeholderGuidelinesText.setText(
                 "LSK Placeholders (within XML attribute values):\n\n" +
-                        "Primary Key (LSK):\n" +
+                        "Primary Key (LSK):----------------------------------\n" +
                         "  Format: \"Table:Column:Module:LogicalID\"\n" +
                         "  Example: <Product product_id=\"Products:ProductID:Inventory:PROD_XYZ\"/>\n" +
                         "  -> Resolves to: \"Products:ProductID:Inventory:123\"\n\n" +
-                        "Foreign Key (REF):\n" +
+                        "Foreign Key (REF):----------------------------------\n" +
                         "  Format: \"REF:{TargetTable:TargetCol:TargetMod:TargetLogicalID}\"\n" +
-                        "  - Target must match an LSK placeholder in the selection.\n" +
+                        "  -> Target must match an LSK placeholder in the selection.\n" +
                         "  Example: <OrderLine item_id=\"REF:{Products:ProductID:Inventory:PROD_XYZ}\"/>\n" +
                         "  -> Resolves to the LSK value (e.g., \"Products:ProductID:Inventory:123\")"
         );
@@ -172,7 +174,8 @@ public class CatalystToolWindowPanel implements Disposable {
         // 4. Panel containing the form elements (built by FormBuilder)
         formContentPanel = FormBuilder.createFormBuilder()
                 .setAlignLabelOnRight(false)
-                .addLabeledComponent(new JBLabel("Current Module Name:"), rootDirectory, JBUI.scale(10))
+//                .addLabeledComponent(new JBLabel("Default Module Name:"), new JBLabel(defaultModuleName != null ? defaultModuleName : "N/A"), JBUI.scale(10))
+                .addLabeledComponent(new JBLabel("Current Module:"), currentModuleNameLabel, JBUI.scale(10))
                 .addLabeledComponent(new JBLabel("Module Name (Override):"), moduleNameField, JBUI.scale(10))
                 .addComponent(resolveButton, JBUI.scale(10))
                 .addComponent(infoLabel, JBUI.scale(10))
@@ -286,7 +289,7 @@ public class CatalystToolWindowPanel implements Disposable {
         final Document document = editor.getDocument();
         PsiFile psiFile = PsiDocumentManager.getInstance(targetProject).getPsiFile(document);
 
-        // DataContext fallback for PsiFile (less critical now, but kept)
+// DataContext fallback for PsiFile (less critical now, but kept)
         if (psiFile == null) {
             LOG.warn("Could not get PsiFile from editor document, trying DataContext.");
             DataContext dataContext = null;
@@ -306,6 +309,47 @@ public class CatalystToolWindowPanel implements Disposable {
             }
         }
 
+        String relativePath = null; // Initialize relativePath variable
+// First, ensure we actually *have* a psiFile after the checks above
+        if (psiFile != null) {
+            final VirtualFile virtualFile = psiFile.getVirtualFile();
+            String projectBasePath = targetProject.getBasePath();
+
+            if (virtualFile != null && projectBasePath != null) {
+                // Use FileUtil for robust relative path calculation, enforce '/' separator
+                relativePath = FileUtil.getRelativePath(projectBasePath, virtualFile.getPath(), '/');
+
+                if (relativePath != null) {
+                    LOG.info("Relative path of selected file: " + relativePath);
+                    int confIndex = relativePath.indexOf("conf/");
+
+                    if (confIndex != -1) {
+                        LOG.info("'conf/' found starting at index: " + confIndex);
+                    } else {
+                        LOG.info("'conf/' was not found in the path: " + relativePath);
+                    }
+                    java.util.List<String> pathDirectories = java.util.List.of(relativePath.split("/"));
+                    final String currentModule = pathDirectories.get(1);
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        currentModuleNameLabel.setText(currentModule);
+                    });
+                    setCurrentModuleName(currentModule);
+                } else {
+                    // Optionally clear the label if path cannot be determined
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        currentModuleNameLabel.setText("N/A\tClick the resolve button to fetch the Module name.");
+                    });
+                    LOG.warn("Could not determine relative path...");
+                }
+            } else {
+                if (virtualFile == null) LOG.warn("Could not get VirtualFile from PsiFile to calculate relative path.");
+                if (projectBasePath == null) LOG.warn("Could not get project base path to calculate relative path.");
+            }
+        } else {
+            // This else block corresponds to the case where psiFile was still null after all attempts.
+            // The subsequent check for psiFile == null will handle the notification.
+            LOG.warn("Cannot calculate relative path because PsiFile is null.");
+        }
         // --- Continue with other Pre-checks ---
         if (!AuthService.getInstance().isSignedIn()) {
             LOG.warn("Resolve LSK cancelled: User not signed in.");
@@ -330,9 +374,9 @@ public class CatalystToolWindowPanel implements Disposable {
             moduleToUse = inputModuleName;
             LOG.info("Using module name from input field: " + moduleToUse);
         } else {
-            String projectName = getProjectDirectoryName();
-            if (projectName != null && !projectName.isEmpty()) {
-                moduleToUse = projectName;
+            ;
+            if (currentModuleName != null && !currentModuleName.isEmpty()) {
+                moduleToUse = currentModuleName;
                 LOG.info("Module name field empty, using project directory name as default: " + moduleToUse);
             } else {
                 LOG.error("Module name is required but not provided in field and project name is unavailable.");

@@ -15,13 +15,10 @@ public interface AuthenticationListener extends EventListener {
      * We use the application-level MessageBus for broad communication.
      * The display name should be unique but is mostly for debugging/inspection.
      */
-    // <<< Corrected Factory Method >>>
-    Topic<AuthenticationListener> TOPIC = Topic.create( // <<< Use Topic.create()
+    Topic<AuthenticationListener> TOPIC = Topic.create(
             "Catalyst LSK Auth Change", // Display name for the topic
             AuthenticationListener.class    // The listener interface class this topic uses
-            // Optional third argument for BroadcastDirection, defaults to TO_CHILDREN which is usually fine for app-level
-            // Topic.BroadcastDirection.NONE // Use this if you ONLY want direct subscribers on the App bus to receive it
-    );
+             );
 
     /**
      * Method called by the publisher when the authentication state has potentially changed

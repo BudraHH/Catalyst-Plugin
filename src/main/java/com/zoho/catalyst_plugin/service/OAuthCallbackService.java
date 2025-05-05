@@ -1,18 +1,18 @@
-package com.zoho.catalyst_plugin.service; // Keep your package
+package com.zoho.catalyst_plugin.service;
 
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState; // <<< Added Import
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import com.intellij.util.messages.MessageBus; // <<< Added Import
+import com.intellij.util.messages.MessageBus;
 import com.zoho.catalyst_plugin.config.PluginConstants;
 import com.zoho.catalyst_plugin.dto.AuthResponse;
-import com.zoho.catalyst_plugin.listeners.AuthenticationListener; // <<< Added Import
-import com.zoho.catalyst_plugin.util.ResponseSender; // Make sure path to ResponseSender is correct
+import com.zoho.catalyst_plugin.listeners.AuthenticationListener;
+import com.zoho.catalyst_plugin.util.ResponseSender;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpMethod;
@@ -91,8 +91,6 @@ public class OAuthCallbackService extends HttpRequestHandler {
             setPendingState(null);
             showNotification(NotificationType.ERROR, "GitHub Sign-In Failed", errorMsg);
             sendResponse(request, context, HttpResponseStatus.BAD_REQUEST, "<html><body>"+errorMsg+" You can close this page.</body></html>");
-            // Optionally publish an auth change event even on failure if UI should react
-            // publishAuthChangeEvent();
             return true;
         }
 
@@ -131,7 +129,7 @@ public class OAuthCallbackService extends HttpRequestHandler {
                 AuthService.getInstance().storeAuthToken(authResponse.getToken());
                 LOG.info("Successfully exchanged code and stored auth token.");
 
-                // <<< Publish event AFTER storing token >>>
+                // --- Publish event AFTER storing token ---
                 publishAuthChangeEvent();
 
                 // Show success notification and respond to browser
@@ -153,8 +151,6 @@ public class OAuthCallbackService extends HttpRequestHandler {
             LOG.error("Failed to exchange GitHub code with backend", e);
             showNotification(NotificationType.ERROR, "Sign-In Failed", "Could not connect to backend or process response: " + e.getMessage());
             sendResponse(request, context, HttpResponseStatus.INTERNAL_SERVER_ERROR, "<html><body>Sign-in failed (backend communication). Please try again or contact support. You can close this page.</body></html>");
-            // Optionally publish failure?
-            // publishAuthChangeEvent();
         }
 
         return true; // Handled
@@ -168,7 +164,6 @@ public class OAuthCallbackService extends HttpRequestHandler {
     }
 
     private void sendResponse(@NotNull FullHttpRequest req, @NotNull ChannelHandlerContext ctx, HttpResponseStatus status, String content) {
-        // Make sure ResponseSender class is accessible
         ResponseSender.sendResponse(req, ctx, status, content, "text/html; charset=UTF-8");
     }
 

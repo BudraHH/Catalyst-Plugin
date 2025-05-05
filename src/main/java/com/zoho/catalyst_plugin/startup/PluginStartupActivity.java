@@ -42,7 +42,7 @@ public class PluginStartupActivity implements ProjectActivity {
      * Since our logic here is synchronous, we add the Continuation parameter but don't
      * directly use it. We return null (equivalent to Unit for synchronous Java impl).
      */
-    @Nullable // Method returns Object, which can be null
+    @Nullable
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
         LOG.info("Catalyst LSK Plugin startup activity running for project: " + project.getName());

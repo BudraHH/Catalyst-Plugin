@@ -167,7 +167,7 @@ public class BackendApiService {
     }
 
 
-    // --- parseErrorMessage helper method (No changes needed) ---
+
     private String parseErrorMessage(String responseBody) {
         // If the response body is null or empty, we can't parse anything.
         if (responseBody == null || responseBody.isEmpty()) {
