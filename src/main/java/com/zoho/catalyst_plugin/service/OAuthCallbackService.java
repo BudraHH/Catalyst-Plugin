@@ -4,15 +4,15 @@ import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
 import com.intellij.openapi.application.ApplicationManager;
-// import com.intellij.openapi.application.ModalityState; // Removed Import
+import com.intellij.openapi.application.ModalityState; // <<< Added Import
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-// import com.intellij.util.messages.MessageBus; // Removed Import
+import com.intellij.util.messages.MessageBus; // <<< Added Import
 import com.zoho.catalyst_plugin.config.PluginConstants;
 import com.zoho.catalyst_plugin.dto.AuthResponse;
-// import com.zoho.catalyst_plugin.listeners.AuthenticationListener; // Removed Import
-import com.zoho.catalyst_plugin.util.ResponseSender; // Ensure this path is correct
+import com.zoho.catalyst_plugin.listeners.AuthenticationListener; // <<< Added Import
+import com.zoho.catalyst_plugin.util.ResponseSender; // Make sure path to ResponseSender is correct
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpMethod;
@@ -20,7 +20,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.QueryStringDecoder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.ide.HttpRequestHandler; // Keep correct import
+import org.jetbrains.ide.HttpRequestHandler;
 
 
 import java.io.IOException;
@@ -28,6 +28,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * Handles the HTTP callback from the GitHub OAuth flow, running on the IDE's built-in server.
+ * Implements org.jetbrains.ide.HttpRequestHandler as required by the extension point.
+ * Processes the request, validates the state, exchanges the code for a token,
+ * stores the token, provides user feedback, and publishes an auth change event.
+ */
 public class OAuthCallbackService extends HttpRequestHandler {
 
     private static final Logger LOG = Logger.getInstance(OAuthCallbackService.class);
@@ -54,7 +60,7 @@ public class OAuthCallbackService extends HttpRequestHandler {
 
     @Override
     public boolean process(@NotNull QueryStringDecoder urlDecoder, @NotNull FullHttpRequest request, @NotNull ChannelHandlerContext context) throws IOException {
-        LOG.info("Processing callback request: {}"+ request.uri());
+        LOG.info("Processing callback request: {}" + request.uri());
 
         String expectedPath = PluginConstants.GITHUB_CALLBACK_PATH.startsWith("/")
                 ? PluginConstants.GITHUB_CALLBACK_PATH
@@ -85,6 +91,8 @@ public class OAuthCallbackService extends HttpRequestHandler {
             setPendingState(null);
             showNotification(NotificationType.ERROR, "GitHub Sign-In Failed", errorMsg);
             sendResponse(request, context, HttpResponseStatus.BAD_REQUEST, "<html><body>"+errorMsg+" You can close this page.</body></html>");
+            // Optionally publish an auth change event even on failure if UI should react
+            // publishAuthChangeEvent();
             return true;
         }
 
@@ -119,11 +127,12 @@ public class OAuthCallbackService extends HttpRequestHandler {
             AuthResponse authResponse = backendService.exchangeGitHubCode(receivedCode);
 
             if (authResponse != null && authResponse.getToken() != null && !authResponse.getToken().isEmpty()) {
-                // Store the token
+                // Store the token FIRST
                 AuthService.getInstance().storeAuthToken(authResponse.getToken());
                 LOG.info("Successfully exchanged code and stored auth token.");
 
-                // <<< publishAuthChangeEvent() call removed >>>
+                // <<< Publish event AFTER storing token >>>
+                publishAuthChangeEvent();
 
                 // Show success notification and respond to browser
                 showNotification(NotificationType.INFORMATION, "Sign-In Successful", "Catalyst LSK Plugin successfully signed in.");
@@ -136,18 +145,22 @@ public class OAuthCallbackService extends HttpRequestHandler {
                 LOG.error(errMsg + " AuthResponse: {}"+ authResponse);
                 showNotification(NotificationType.ERROR, "Sign-In Failed", errMsg);
                 sendResponse(request, context, HttpResponseStatus.INTERNAL_SERVER_ERROR, "<html><body>Sign-in failed (token processing). Please try again or contact support. You can close this page.</body></html>");
+                // Optionally publish failure?
+                // publishAuthChangeEvent();
             }
 
         } catch (Exception e) { // Catch errors from backendService.exchangeGitHubCode
             LOG.error("Failed to exchange GitHub code with backend", e);
             showNotification(NotificationType.ERROR, "Sign-In Failed", "Could not connect to backend or process response: " + e.getMessage());
             sendResponse(request, context, HttpResponseStatus.INTERNAL_SERVER_ERROR, "<html><body>Sign-in failed (backend communication). Please try again or contact support. You can close this page.</body></html>");
+            // Optionally publish failure?
+            // publishAuthChangeEvent();
         }
 
         return true; // Handled
     }
 
-    // --- Helper methods (getParameter, sendResponse, showNotification) remain the same ---
+    // --- Helper methods ---
     private String getParameter(Map<String, List<String>> parameters, String name) {
         List<String> values = parameters.get(name);
         if (values != null && !values.isEmpty()) { return values.get(0); }
@@ -169,6 +182,25 @@ public class OAuthCallbackService extends HttpRequestHandler {
         });
     }
 
-    // <<< publishAuthChangeEvent() method REMOVED >>>
-
+    /**
+     * Publishes an authentication state change event on the application's MessageBus.
+     */
+    private void publishAuthChangeEvent() {
+        LOG.debug("Attempting to publish authentication state change event...");
+        try {
+            MessageBus messageBus = ApplicationManager.getApplication().getMessageBus();
+            AuthenticationListener publisher = messageBus.syncPublisher(AuthenticationListener.TOPIC);
+            // Run listener call on EDT
+            ApplicationManager.getApplication().invokeLater(() -> {
+                try {
+                    publisher.authenticationStateChanged();
+                    LOG.debug("Auth change event published successfully via invokeLater.");
+                } catch (Exception e) {
+                    LOG.error("Error occurred within an AuthenticationListener during event dispatch", e);
+                }
+            }, ModalityState.nonModal()); // Use nonModal state
+        } catch (Exception e) {
+            LOG.error("Error obtaining message bus or publisher for authentication state change event", e);
+        }
+    }
 }

@@ -14,7 +14,6 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.HttpHeaders;
-
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 
@@ -125,13 +124,18 @@ public class BackendApiService {
     }
 
     // --- resolveLskSelection method  ---
-    public ApiResponse resolveLskSelection(String xmlContent, String sessionToken) throws IOException, IllegalArgumentException {
+    public ApiResponse resolveLskSelection(String inputModuleName, String xmlContent, String sessionToken) throws IOException, IllegalArgumentException {
         LOG.info("Calling LSK Resolve API for XML selection.");
 
         if (sessionToken == null || sessionToken.trim().isEmpty()) { throw new IllegalArgumentException("Auth token cannot be null or empty for resolution."); }
+        if (inputModuleName == null || inputModuleName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Module name cannot be empty for resolution.");
+        }
         if (xmlContent == null || xmlContent.isEmpty()) { throw new IllegalArgumentException("XML content cannot be empty for resolution."); }
 
-        Map<String, String> requestPayload = new HashMap<>(); requestPayload.put("xmlContent", xmlContent);
+        Map<String, String> requestPayload = new HashMap<>();
+        requestPayload.put("moduleName", inputModuleName);
+        requestPayload.put("xmlContent", xmlContent);
         String requestBodyJson = gson.toJson(requestPayload);
 
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {

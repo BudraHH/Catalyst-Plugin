@@ -7,7 +7,7 @@ import com.intellij.notification.Notifications;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.zoho.catalyst_plugin.config.PluginConstants;
-import com.zoho.catalyst_plugin.service.OAuthCallbackService; // Still depends on this service
+import com.zoho.catalyst_plugin.service.OAuthCallbackService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.ide.BuiltInServerManager;
 
@@ -56,11 +56,6 @@ public class AuthHelper {
             LOG.info("Opening browser to GitHub authorization URL...");
             BrowserUtil.browse(authorizationUrl);
 
-            // Inform user (optional here, maybe handled by caller)
-            // Notifications.Bus.notify(new Notification(
-            //         PluginConstants.NOTIFICATION_GROUP_ID, "Sign In Started",
-            //         "Please authorize in your browser.", NotificationType.INFORMATION), project);
-
         } catch (Exception ex) {
             LOG.error("Failed to initiate GitHub sign-in flow", ex);
             Notifications.Bus.notify(new Notification(
@@ -93,6 +88,6 @@ public class AuthHelper {
         return String.format("http://127.0.0.1:%d%s", port, path);
     }
 
-    // Private constructor for utility class
     private AuthHelper() {}
 }
+

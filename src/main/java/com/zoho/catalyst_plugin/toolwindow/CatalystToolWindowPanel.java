@@ -1,203 +1,447 @@
 package com.zoho.catalyst_plugin.toolwindow;
 
-import com.intellij.notification.Notification;
-import com.intellij.notification.NotificationType;
-import com.intellij.notification.Notifications;
-import com.intellij.openapi.diagnostic.Logger; // Use Logger
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.wm.ToolWindow;
-// import com.intellij.openapi.Disposable; // <<< Removed Import
-// import com.intellij.openapi.util.Disposer; // <<< Removed Import
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiManager;
-import com.intellij.psi.xml.XmlFile;
-// import com.intellij.util.messages.MessageBusConnection; // <<< Removed Import
-import com.zoho.catalyst_plugin.config.PluginConstants;
-// import com.zoho.catalyst_plugin.listeners.AuthenticationListener; // <<< Removed Import
-import com.zoho.catalyst_plugin.service.AuthService;
-import com.zoho.catalyst_plugin.util.AuthHelper; // Use our helper
-import org.jetbrains.annotations.NotNull;
-
+// Swing & AWT Imports
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 
-/**
- * The UI panel displayed inside the Catalyst LSK Tool Window.
- * Contains controls for sign-in/out, displays status.
- * Does NOT automatically update on external auth changes without MessageBus.
- */
-// <<< No longer implements Disposable >>>
-public class CatalystToolWindowPanel {
+// IntelliJ Platform UI Imports
+import com.intellij.collaboration.ui.JPanelWithBackground;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.ui.IdeBorderFactory;
+import com.intellij.ui.ScrollPaneFactory;
+import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBPanel;
+import com.intellij.ui.components.JBScrollPane; // Import JBScrollPane
+import com.intellij.ui.components.JBTextArea;
+import com.intellij.ui.components.JBTextField;
+import com.intellij.util.ui.FormBuilder;
+import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.UIUtil;
+
+// IntelliJ Core/Action System Imports
+import com.intellij.ide.DataManager;
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationType;
+import com.intellij.notification.Notifications;
+import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.xml.XmlFile;
+import com.intellij.util.messages.MessageBus;
+import com.intellij.util.messages.MessageBusConnection;
+
+// Project Specific Imports
+import com.zoho.catalyst_plugin.config.PluginConstants;
+import com.zoho.catalyst_plugin.dto.ApiResponse;
+import com.zoho.catalyst_plugin.listeners.AuthenticationListener;
+import com.zoho.catalyst_plugin.service.AuthService;
+import com.zoho.catalyst_plugin.service.BackendApiService;
+import com.zoho.catalyst_plugin.util.AuthHelper;
+
+// Other Imports
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.IOException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+
+
+public class CatalystToolWindowPanel implements Disposable {
     private static final Logger LOG = Logger.getInstance(CatalystToolWindowPanel.class);
 
     private final Project project;
     private final ToolWindow toolWindow;
 
     // --- UI Components ---
-    private JPanel mainPanel;
+    private JPanel mainPanel; // The root panel with BorderLayout
     private JLabel statusLabel;
-    private JButton signInSignOutButton;
+    private JButton signInButton;
+    private JPanel signInButtonPanel; // Panel to help center the button
     private JButton resolveButton;
+    private JBTextField moduleNameField;
+    private JPanel formContentPanel; // Panel built by FormBuilder (guidelines, etc.)
+    private JPanel signedInContentPanel; // Panel containing status + formContentPanel
+    private JBLabel infoLabel;
+    private JPanelWithBackground usageGuidelinesPanel;
+    private JPanelWithBackground placeholderGuidelinesPanel;
+    private JBLabel rootDirectory;
 
-    // <<< Removed MessageBusConnection field >>>
-    // private MessageBusConnection connection;
+    private MessageBusConnection connection;
 
     public CatalystToolWindowPanel(@NotNull Project project, @NotNull ToolWindow toolWindow) {
         this.project = project;
         this.toolWindow = toolWindow;
+        this.rootDirectory = new JBLabel(getProjectDirectoryName());
         LOG.debug("Creating CatalystToolWindowPanel for project: {}", project.getName());
-        initComponents();
-        // <<< Removed call to subscribeToAuthChanges() >>>
-        updateUIState(); // Set initial state
-
-        // <<< Removed Disposer.register call >>>
-        // Disposer.register(toolWindow.getDisposable(), this);
+        mainPanel = createMainPanel(); // Creates the root panel and child components
+        subscribeToAuthChanges();
+        updateUIState(); // Set initial visibility based on auth state
+        Disposer.register(toolWindow.getDisposable(), this);
     }
 
-    /**
-     * Creates and lays out the Swing components for the tool window panel.
-     */
-    private void initComponents() {
-        // ... (initComponents implementation remains the same) ...
-        mainPanel = new JPanel(new BorderLayout(5, 5));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        statusLabel = new JLabel("Status: Initializing...");
-        mainPanel.add(statusLabel, BorderLayout.NORTH);
-        JPanel buttonPanel = new JPanel();
-        buttonPanel.setLayout(new BoxLayout(buttonPanel, BoxLayout.Y_AXIS));
-        buttonPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+    @Nullable
+    private String getProjectDirectoryName() {
+        VirtualFile baseDir = project.getBaseDir();
+        return (baseDir != null) ? baseDir.getName() : null;
+    }
+
+    private JPanel createMainPanel() {
+        // 1. Status Label (will be added to signedInContentPanel)
+        statusLabel = new JBLabel("Status: Initializing...");
+
+        // 2. Sign-in Button and its Centering Panel
+        signInButton = new JButton("Sign In with GitHub...\nClick here..");
+        signInButton.setToolTipText("Initiate sign in using your GitHub account.");
+        signInButton.addActionListener(this::handleSignIn);
+        signInButton.setMargin(JBUI.insets(5, 15));
+        signInButtonPanel = new JPanel(new GridBagLayout()); // Use GridBagLayout for centering
+        signInButtonPanel.add(signInButton); // Add button, GridBagLayout will center by default
+
+        // 3. Components for the Signed-in View
+        moduleNameField = new JBTextField();
+        moduleNameField.setToolTipText("Optional: Enter a default Module name if not specified in placeholders.");
+
         resolveButton = new JButton("Resolve LSKs in Selection");
-        resolveButton.setToolTipText("Resolve selected LSK placeholders in the active XML editor.");
-        resolveButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        resolveButton.setVisible(false);
-        buttonPanel.add(resolveButton);
-        buttonPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-        signInSignOutButton = new JButton("...");
-        signInSignOutButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        buttonPanel.add(signInSignOutButton);
-        mainPanel.add(buttonPanel, BorderLayout.CENTER);
-        signInSignOutButton.addActionListener(this::handleSignInSignOut);
+        resolveButton.setToolTipText("Resolve selected LSK placeholders in the active XML editor using the specified module.");
         resolveButton.addActionListener(this::handleResolveLsk);
+
+        infoLabel = new JBLabel("<html><i>Select XML in the editor, specify module (optional), then click 'Resolve'.</i></html>");
+        infoLabel.setForeground(UIUtil.getContextHelpForeground());
+        rootDirectory.setForeground(UIUtil.getContextHelpForeground());
+
+        // --- Usage Guidelines Panel ---
+        usageGuidelinesPanel = new JPanelWithBackground(new BorderLayout());
+        usageGuidelinesPanel.setBorder(IdeBorderFactory.createTitledBorder("Usage Guide", false, JBUI.insetsTop(8)));
+        JBTextArea usageGuidelinesText = new JBTextArea();
+        // ... (configure usageGuidelinesText as before) ...
+        usageGuidelinesText.setEditable(false);
+        usageGuidelinesText.setBackground(UIUtil.getPanelBackground());
+        usageGuidelinesText.setWrapStyleWord(true);
+        usageGuidelinesText.setLineWrap(true);
+        usageGuidelinesText.setFont(UIUtil.getLabelFont(UIUtil.FontSize.NORMAL));
+        usageGuidelinesText.setForeground(UIUtil.getContextHelpForeground());
+        usageGuidelinesText.setText(
+                "1. Select XML block with LSK placeholders in the editor.\n" +
+                        "   (e.g., <Element id=\"Table:Column:Module:LogicalID\"/>)\n" +
+                        "2. Optionally enter 'Module Name' above to override default.\n" +
+                        "   (Default module: '" + (getProjectDirectoryName() != null ? getProjectDirectoryName() : "N/A") + "')\n" +
+                        "3. Click 'Resolve LSKs in Selection'.\n" +
+                        "4. Selection replaced with resolved values (e.g., ...:123\"/>)."
+        );
+        usageGuidelinesPanel.add(usageGuidelinesText, BorderLayout.CENTER);
+
+        // --- Placeholders Guidelines Panel ---
+        placeholderGuidelinesPanel = new JPanelWithBackground(new BorderLayout());
+        placeholderGuidelinesPanel.setBorder(IdeBorderFactory.createTitledBorder("Placeholders Guidelines", false, JBUI.insetsTop(8)));
+        JBTextArea placeholderGuidelinesText = new JBTextArea();
+        // ... (configure placeholderGuidelinesText as before) ...
+        placeholderGuidelinesText.setEditable(false);
+        placeholderGuidelinesText.setBackground(UIUtil.getPanelBackground());
+        placeholderGuidelinesText.setWrapStyleWord(true);
+        placeholderGuidelinesText.setLineWrap(true);
+        placeholderGuidelinesText.setFont(UIUtil.getLabelFont(UIUtil.FontSize.NORMAL));
+        placeholderGuidelinesText.setForeground(UIUtil.getContextHelpForeground());
+        placeholderGuidelinesText.setText(
+                "LSK Placeholders (within XML attribute values):\n\n" +
+                        "Primary Key (LSK):\n" +
+                        "  Format: \"Table:Column:Module:LogicalID\"\n" +
+                        "  Example: <Product product_id=\"Products:ProductID:Inventory:PROD_XYZ\"/>\n" +
+                        "  -> Resolves to: \"Products:ProductID:Inventory:123\"\n\n" +
+                        "Foreign Key (REF):\n" +
+                        "  Format: \"REF:{TargetTable:TargetCol:TargetMod:TargetLogicalID}\"\n" +
+                        "  - Target must match an LSK placeholder in the selection.\n" +
+                        "  Example: <OrderLine item_id=\"REF:{Products:ProductID:Inventory:PROD_XYZ}\"/>\n" +
+                        "  -> Resolves to the LSK value (e.g., \"Products:ProductID:Inventory:123\")"
+        );
+        // Wrap the text area in a scroll pane BEFORE adding to the placeholder panel
+        placeholderGuidelinesPanel.add(placeholderGuidelinesText, BorderLayout.CENTER);
+
+        // 4. Panel containing the form elements (built by FormBuilder)
+        formContentPanel = FormBuilder.createFormBuilder()
+                .setAlignLabelOnRight(false)
+                .addLabeledComponent(new JBLabel("Current Module Name:"), rootDirectory, JBUI.scale(10))
+                .addLabeledComponent(new JBLabel("Module Name (Override):"), moduleNameField, JBUI.scale(10))
+                .addComponent(resolveButton, JBUI.scale(10))
+                .addComponent(infoLabel, JBUI.scale(10))
+                .addComponent(usageGuidelinesPanel, JBUI.scale(15)) // Increase spacing slightly
+                .addComponent(placeholderGuidelinesPanel, JBUI.scale(10))
+                .getPanel();
+
+        // 5. Panel combining status label and form content for the "Signed In" state
+        signedInContentPanel = new JBPanel<>(new BorderLayout(0, 5)); // BorderLayout for status (N) + form (C)
+        signedInContentPanel.setBorder(JBUI.Borders.emptyBottom(5)); // Add padding at the bottom
+        signedInContentPanel.add(statusLabel, BorderLayout.NORTH);
+        // Add the form content inside a scroll pane to handle potentially long content
+        signedInContentPanel.add(ScrollPaneFactory.createScrollPane(formContentPanel, true), BorderLayout.CENTER);
+
+        // 6. The main root panel using BorderLayout
+        JBPanel<JBPanel> rootPanel = new JBPanel<>(new BorderLayout(0, 0)); // No gaps
+        rootPanel.setBorder(JBUI.Borders.empty(10));
+        rootPanel.add(signedInContentPanel, BorderLayout.NORTH);
+
+        return rootPanel;
     }
 
-    /**
-     * Updates the text and visibility/enabled state of UI components based on auth status.
-     * Ensures updates happen on the Swing Event Dispatch Thread.
-     */
     public void updateUIState() {
-        // ... (updateUIState implementation remains the same) ...
         SwingUtilities.invokeLater(() -> {
             boolean isSignedIn = AuthService.getInstance().isSignedIn();
             LOG.debug("Updating UI state. Is signed in: {}", isSignedIn);
+
+            // Always update status text
             if (isSignedIn) {
                 statusLabel.setText("Status: Signed In");
-                signInSignOutButton.setText("Sign Out");
-                signInSignOutButton.setToolTipText("Sign out from the Catalyst LSK service.");
-                resolveButton.setVisible(true);
-                resolveButton.setEnabled(true);
             } else {
-                statusLabel.setText("Status: Not Signed In");
-                signInSignOutButton.setText("Sign In with GitHub...");
-                signInSignOutButton.setToolTipText("Initiate sign in using your GitHub account.");
-                resolveButton.setVisible(false);
-                resolveButton.setEnabled(false);
+                statusLabel.setText("Status: Not Signed In"); // Update even if hidden
             }
-            signInSignOutButton.setEnabled(true);
+
+            // Get current components in mainPanel
+            BorderLayout layout = (BorderLayout) mainPanel.getLayout();
+            Component centerComponent = layout.getLayoutComponent(BorderLayout.CENTER);
+            Component northComponent = layout.getLayoutComponent(BorderLayout.NORTH);
+
+            if (isSignedIn) {
+                // Ensure signedInContentPanel is NORTH, remove signInButtonPanel from CENTER
+                if (centerComponent == signInButtonPanel) mainPanel.remove(signInButtonPanel);
+                if (northComponent != signedInContentPanel) {
+                    if (northComponent != null) mainPanel.remove(northComponent); // Remove anything else from NORTH
+                    mainPanel.add(signedInContentPanel, BorderLayout.NORTH);
+                }
+                // Set visibility (though it's managed by adding/removing)
+                signedInContentPanel.setVisible(true);
+                signInButtonPanel.setVisible(false);
+            } else {
+                // Ensure signInButtonPanel is CENTER, remove signedInContentPanel from NORTH
+                if (northComponent == signedInContentPanel) mainPanel.remove(signedInContentPanel);
+                if (centerComponent != signInButtonPanel) {
+                    if (centerComponent != null) mainPanel.remove(centerComponent); // Remove anything else from CENTER
+                    mainPanel.add(signInButtonPanel, BorderLayout.CENTER);
+                }
+                // Set visibility
+                signedInContentPanel.setVisible(false);
+                signInButtonPanel.setVisible(true);
+            }
+
+            mainPanel.revalidate();
+            mainPanel.repaint();
         });
     }
 
-    /**
-     * Action handler for the Sign In / Sign Out button. Provides immediate feedback
-     * during sign-in initiation and allows retrying if needed.
-     */
-    private void handleSignInSignOut(ActionEvent e) {
-        // ... (handleSignInSignOut implementation remains the same,
-        //      including the fix for re-enabling the button after sign-in attempt) ...
-        AuthService authService = AuthService.getInstance();
-        if (authService.isSignedIn()) {
-            // --- Sign Out ---
-            LOG.info("Sign Out button clicked.");
-            authService.clearAuthToken();
-            // <<< Removed publishAuthChangeEvent() call >>>
-            Notifications.Bus.notify(new Notification(
-                    PluginConstants.NOTIFICATION_GROUP_ID, "Signed Out",
-                    "You have been signed out.", NotificationType.INFORMATION), project);
-            updateUIState(); // Manually update UI after sign out
 
+    private void handleSignIn(ActionEvent e) {
+        LOG.info("Sign In button clicked.");
+        if (AuthService.getInstance().isSignedIn()) return;
+        signInButton.setEnabled(false);
+        // statusLabel.setText("Status: Opening browser..."); // Status label might not be visible yet
+        Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Sign In", "Opening browser for GitHub sign in...", NotificationType.INFORMATION), project); // Use notification
+        AuthHelper.initiateSignInFlow(project);
+        // Timer to re-enable button if auth fails/takes long
+        Timer timer = new Timer(3000, ae -> {
+            if (!AuthService.getInstance().isSignedIn() && !signInButton.isEnabled()) {
+                signInButton.setEnabled(true);
+            }
+        });
+        timer.setRepeats(false);
+        timer.start();
+    }
+
+    /**
+     * Action handler for the "Resolve LSKs in Selection" button.
+     * Performs the entire resolution process directly.
+     */
+    private void handleResolveLsk(ActionEvent event) {
+        LOG.debug("Resolve LSK button clicked.");
+
+        // --- Use project from this class instance ---
+        final Project targetProject = this.project;
+        if (targetProject == null) {
+            LOG.error("Cannot resolve LSK: Project context is null for the tool window panel.");
+            Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Error", "Cannot determine project context.", NotificationType.ERROR));
+            return;
+        }
+
+        // --- Get Editor directly using FileEditorManager ---
+        final Editor editor = FileEditorManager.getInstance(targetProject).getSelectedTextEditor();
+
+        // 1. Perform Pre-checks (Editor Check First)
+        if (editor == null) {
+            LOG.warn("Resolve LSK cancelled: No active text editor found or focused.");
+            Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Action Required", "Please focus an XML file in the editor.", NotificationType.WARNING), targetProject);
+            return;
+        }
+
+        // --- Get PsiFile ---
+        final Document document = editor.getDocument();
+        PsiFile psiFile = PsiDocumentManager.getInstance(targetProject).getPsiFile(document);
+
+        // DataContext fallback for PsiFile (less critical now, but kept)
+        if (psiFile == null) {
+            LOG.warn("Could not get PsiFile from editor document, trying DataContext.");
+            DataContext dataContext = null;
+            try {
+                dataContext = DataManager.getInstance().getDataContext(editor.getComponent());
+                if (dataContext == null) {
+                    dataContext = DataManager.getInstance().getDataContextFromFocusAsync().blockingGet(100);
+                }
+            } catch (Exception ex) {
+                LOG.warn("Failed to get DataContext: " + ex.getMessage(), ex);
+            }
+            if (dataContext != null) {
+                psiFile = CommonDataKeys.PSI_FILE.getData(dataContext);
+                if (psiFile != null) {
+                    LOG.info("Obtained PsiFile via DataContext fallback.");
+                }
+            }
+        }
+
+        // --- Continue with other Pre-checks ---
+        if (!AuthService.getInstance().isSignedIn()) {
+            LOG.warn("Resolve LSK cancelled: User not signed in.");
+            Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Sign In Required", "Please sign in before resolving LSKs.", NotificationType.WARNING), targetProject);
+            return;
+        }
+        if (psiFile == null || !(psiFile instanceof XmlFile)) {
+            LOG.warn("Resolve LSK cancelled: Active file is not an XML file or couldn't be determined.");
+            Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Action Required", "Please ensure the active file is an XML file.", NotificationType.WARNING), targetProject);
+            return;
+        }
+        if (!editor.getSelectionModel().hasSelection()) {
+            LOG.warn("Resolve LSK cancelled: No text selected.");
+            Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Action Required", "Please select the XML block containing placeholders.", NotificationType.WARNING), targetProject);
+            return;
+        }
+
+        // 2. Determine Module Name
+        String inputModuleName = moduleNameField.getText().trim();
+        String moduleToUse = null;
+        if (!inputModuleName.isEmpty()) {
+            moduleToUse = inputModuleName;
+            LOG.info("Using module name from input field: " + moduleToUse);
         } else {
-            // --- Sign In ---
-            LOG.info("Sign In button clicked.");
-            final String originalButtonText = signInSignOutButton.getText();
-            final String originalStatusText = "Status: Not Signed In";
-            signInSignOutButton.setEnabled(false);
-            statusLabel.setText("Status: Opening browser...");
-            AuthHelper.initiateSignInFlow(project);
-            SwingUtilities.invokeLater(() -> {
-                if (!AuthService.getInstance().isSignedIn()) {
-                    LOG.debug("Resetting sign-in button/status after initiation attempt.");
-                    statusLabel.setText(originalStatusText);
-                    signInSignOutButton.setText(originalButtonText);
-                    signInSignOutButton.setEnabled(true);
-                } else {
-                    // NOTE: This else block might not reliably reflect the
-                    // actual signed-in state immediately after the flow,
-                    // as there's no event triggering this check at the right time.
-                    // It relies on the unlikely chance that invokeLater runs
-                    // *after* the entire OAuth flow completes AND the token is stored.
-                    LOG.debug("Sign-in might have completed, calling updateUIState.");
+            String projectName = getProjectDirectoryName();
+            if (projectName != null && !projectName.isEmpty()) {
+                moduleToUse = projectName;
+                LOG.info("Module name field empty, using project directory name as default: " + moduleToUse);
+            } else {
+                LOG.error("Module name is required but not provided in field and project name is unavailable.");
+                Notifications.Bus.notify(new Notification(
+                        PluginConstants.NOTIFICATION_GROUP_ID, "Module Name Required",
+                        "Could not determine default module name. Please enter one in the 'Module Name' field.",
+                        NotificationType.WARNING), targetProject);
+                return;
+            }
+        }
+
+        // 3. Get Selected Text and Auth Token
+        final String selectedText = editor.getSelectionModel().getSelectedText();
+        if (selectedText == null || selectedText.trim().isEmpty()) {
+            LOG.warn("Resolve LSK cancelled: Selected text is empty.");
+            Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Action Required", "Selected text is empty.", NotificationType.WARNING), targetProject);
+            return;
+        }
+        final String authToken = AuthService.getInstance().getAuthToken();
+        if (authToken == null) {
+            LOG.error("Resolve LSK cancelled: Auth token is null despite being signed in.");
+            Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Error", "Internal error: Authentication token missing.", NotificationType.ERROR), targetProject);
+            return;
+        }
+
+        // 4. Call Backend Service (Background Thread)
+        final String finalModuleToUse = moduleToUse;
+        final PsiFile finalPsiFile = psiFile;
+        Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "LSK Resolver", "Resolving placeholders...", NotificationType.INFORMATION), targetProject);
+
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                BackendApiService backendService = BackendApiService.getInstance();
+                ApiResponse response = backendService.resolveLskSelection(finalModuleToUse, selectedText, authToken);
+
+                // 5. Process Response and Update Editor (EDT)
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (!targetProject.isDisposed() && !editor.isDisposed()) { // Check project/editor validity
+                        if (response.getError() != null) {
+                            LOG.warn("LSK resolution failed: " + response.getError());
+                            Notifications.Bus.notify(new Notification(
+                                    PluginConstants.NOTIFICATION_GROUP_ID, "Resolution Failed",
+                                    "Backend Error: " + response.getError(), NotificationType.ERROR), targetProject);
+                        } else if (response.getData() != null) {
+                            LOG.info("LSK resolution successful. Updating editor.");
+                            final String resolvedXml = response.getData();
+                            final int startOffset = editor.getSelectionModel().getSelectionStart();
+                            final int endOffset = editor.getSelectionModel().getSelectionEnd();
+
+                            WriteCommandAction.runWriteCommandAction(targetProject, "Resolve LSK Placeholders", null, () -> {
+                                if (document.isWritable()) {
+                                    document.replaceString(startOffset, endOffset, resolvedXml);
+                                } else {
+                                    LOG.warn("Document not writable during write action.");
+                                    Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Warning", "Could not write to document.", NotificationType.WARNING), targetProject);
+                                }
+                            }, finalPsiFile);
+
+                            editor.getSelectionModel().removeSelection();
+                            Notifications.Bus.notify(new Notification(
+                                    PluginConstants.NOTIFICATION_GROUP_ID, "Resolution Successful",
+                                    "Selected placeholders replaced.", NotificationType.INFORMATION), targetProject);
+                        } else {
+                            LOG.error("LSK resolution returned unexpected state: No error and no data.");
+                            Notifications.Bus.notify(new Notification(
+                                    PluginConstants.NOTIFICATION_GROUP_ID, "Error",
+                                    "Internal error: Invalid response from backend.", NotificationType.ERROR), targetProject);
+                        }
+                    } else {
+                        LOG.warn("Project or Editor disposed before LSK result could be processed.");
+                    }
+                }, ModalityState.defaultModalityState());
+
+            } catch (IOException | IllegalArgumentException e) {
+                LOG.error("Error calling LSK resolve API: " + e.getMessage(), e);
+                ApplicationManager.getApplication().invokeLater(() -> Notifications.Bus.notify(new Notification(
+                        PluginConstants.NOTIFICATION_GROUP_ID, "Resolution Error",
+                        "Failed to communicate with backend: " + e.getMessage(), NotificationType.ERROR), targetProject), ModalityState.defaultModalityState());
+            } catch (Exception e) {
+                LOG.error("Unexpected error during LSK resolution: " + e.getMessage(), e);
+                ApplicationManager.getApplication().invokeLater(() -> Notifications.Bus.notify(new Notification(
+                        PluginConstants.NOTIFICATION_GROUP_ID, "Resolution Error",
+                        "An unexpected error occurred: " + e.getMessage(), NotificationType.ERROR), targetProject), ModalityState.defaultModalityState());
+            }
+        });
+    }
+
+
+    public JPanel getMainPanel() {
+        return mainPanel;
+    }
+
+
+    private void subscribeToAuthChanges() {
+        if (connection == null) {
+            connection = ApplicationManager.getApplication().getMessageBus().connect(this);
+            LOG.debug("Subscribing ToolWindowPanel to AuthenticationListener topic.");
+            connection.subscribe(AuthenticationListener.TOPIC, new AuthenticationListener() {
+                @Override
+                public void authenticationStateChanged() {
+                    LOG.info("Received authenticationStateChanged event. Refreshing ToolWindow UI.");
                     updateUIState();
                 }
             });
         }
     }
-
-    /**
-     * Action handler for the "Resolve LSKs in Selection" button.
-     */
-    private void handleResolveLsk(ActionEvent e) {
-        // ... (handleResolveLsk implementation remains the same) ...
-        LOG.debug("Resolve LSK button clicked.");
-        Editor editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
-        if (editor == null) { Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID,"LSK Resolver","No active text editor found.", NotificationType.WARNING), project); return; }
-        Document document = editor.getDocument();
-        VirtualFile virtualFile = FileDocumentManager.getInstance().getFile(document);
-        if (virtualFile == null) { Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID,"LSK Resolver","Cannot identify file.", NotificationType.WARNING), project); return; }
-        PsiFile psiFile = PsiManager.getInstance(project).findFile(virtualFile);
-        if (!(psiFile instanceof XmlFile)) { Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID,"LSK Resolver","Please open an XML file.", NotificationType.WARNING), project); return; }
-        if (!editor.getSelectionModel().hasSelection()) { Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID,"LSK Resolver","Please select XML text.", NotificationType.WARNING), project); return; }
-        Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "LSK Resolver", "Context is valid! Please use the right-click context menu:\n'Catalyst LSK' -> 'Resolve LSKs in Selection'\non your selected text.", NotificationType.INFORMATION), project);
+    @Override
+    public void dispose() {
+        LOG.debug("Disposing CatalystToolWindowPanel.");
+        // MessageBus connection automatically disposed because we used connect(this)
     }
-
-
-    /**
-     * Returns the main JPanel to be added to the tool window content manager.
-     */
-    public JPanel getMainPanel() {
-        return mainPanel;
-    }
-
-    /**
-     * Refreshes the UI state based on current authentication status.
-     * Can be called externally (e.g., after sign-in completes).
-     */
-    public void refreshUI() {
-        // This method still exists but won't be called automatically by MessageBus
-        LOG.debug("Explicit refreshUI called.");
-        updateUIState();
-    }
-
-    // <<< REMOVED MessageBus Subscription method >>>
-    // private void subscribeToAuthChanges() { ... }
-
-    // <<< REMOVED Disposable Implementation and dispose() method >>>
-    // @Override public void dispose() { ... }
-
-    // <<< REMOVED publishAuthChangeEvent() helper method >>>
-    // private void publishAuthChangeEvent() { ... }
 }

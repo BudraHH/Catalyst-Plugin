@@ -14,13 +14,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.ide.BuiltInServerManager;
 
-// Import your existing classes
 import com.zoho.catalyst_plugin.config.PluginConstants;
 import com.zoho.catalyst_plugin.service.AuthService;
-// Assuming this will exist for state handling
-import com.zoho.catalyst_plugin.service.OAuthCallbackService; // Placeholder for dependency
+import com.zoho.catalyst_plugin.service.OAuthCallbackService;
 
-// Import required Kotlin Coroutine types for the interface signature
 import kotlin.Unit;
 import kotlin.coroutines.Continuation;
 
@@ -48,7 +45,6 @@ public class PluginStartupActivity implements ProjectActivity {
     @Nullable // Method returns Object, which can be null
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
-        // The signature now matches the required abstract method, including the Continuation
         LOG.info("Catalyst LSK Plugin startup activity running for project: " + project.getName());
 
         AuthService authService = AuthService.getInstance();
@@ -73,9 +69,6 @@ public class PluginStartupActivity implements ProjectActivity {
                 LOG.info("Sign-in prompt already shown for this project previously. No prompt needed.");
             }
         }
-
-        // For synchronous Java implementations of suspend functions returning Unit,
-        // returning null is standard practice. Alternatively, return Unit.INSTANCE.
         return null;
     }
 
@@ -101,8 +94,7 @@ public class PluginStartupActivity implements ProjectActivity {
                 LOG.info("Initiating GitHub OAuth flow from notification action...");
                 String state = generateSecureRandomString(32);
                 try {
-                    // **CRITICAL DEPENDENCY:** Needs OAuthCallbackService.setPendingState implementation
-                    OAuthCallbackService.setPendingState(state); // Assumed method
+                    OAuthCallbackService.setPendingState(state);
                     LOG.info("Generated and stored state parameter (temporarily): " + state);
 
                     String redirectUri = buildCallbackUrl();
@@ -126,8 +118,7 @@ public class PluginStartupActivity implements ProjectActivity {
                 } catch (Exception ex) {
                     LOG.error("Failed to construct or open GitHub authorization URL from notification", ex);
                     Notifications.Bus.notify(new Notification(PluginConstants.NOTIFICATION_GROUP_ID, "Sign In Error", "Could not initiate sign-in process: " + ex.getMessage(), NotificationType.ERROR), project);
-                    // Clear potentially stored state on failure
-                    OAuthCallbackService.setPendingState(null); // Assumed method
+                    OAuthCallbackService.setPendingState(null);
                     notification.expire();
                 }
             }
@@ -143,7 +134,7 @@ public class PluginStartupActivity implements ProjectActivity {
         LOG.info("Sign-in notification displayed.");
     }
 
-    // --- Helper methods (generateSecureRandomString, buildCallbackUrl) remain the same ---
+    // --- Helper methods ---
     private String generateSecureRandomString(int byteLength) {
         SecureRandom random = new SecureRandom();
         byte[] bytes = new byte[byteLength];

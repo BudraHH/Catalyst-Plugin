@@ -1,6 +1,5 @@
 package com.zoho.catalyst_plugin.actions;
 
-// No longer need BrowserUtil, URLEncoder, StandardCharsets, SecureRandom, Base64, BuiltInServerManager here
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
@@ -8,14 +7,10 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-// No longer need OAuthCallbackService import here if AuthHelper handles it
-// import com.zoho.catalyst_plugin.service.OAuthCallbackService;
 import org.jetbrains.annotations.NotNull;
 
-// Import Services and Constants
 import com.zoho.catalyst_plugin.service.AuthService;
 import com.zoho.catalyst_plugin.config.PluginConstants;
-// Import the new helper class
 import com.zoho.catalyst_plugin.util.AuthHelper;
 
 /**
@@ -59,19 +54,13 @@ public class SignInAction extends AnAction {
         }
 
         // --- Call the refactored helper method ---
-        // AuthHelper handles state generation, URL building, browser opening, and basic error handling
         AuthHelper.initiateSignInFlow(project);
 
         // --- Inform User (Specific to this manual action) ---
-        // It's good practice to let the user know the browser should have opened
-        Notifications.Bus.notify(new Notification(
+       Notifications.Bus.notify(new Notification(
                 PluginConstants.NOTIFICATION_GROUP_ID,
                 "Sign In Initiated",
                 "Please authorize the application in the opened browser window to complete sign in.",
                 NotificationType.INFORMATION), project);
     }
-
-    // --- REMOVED HELPER METHODS ---
-    // generateSecureRandomString() is now in AuthHelper
-    // buildCallbackUrl() is now in AuthHelper
 }

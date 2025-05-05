@@ -35,13 +35,12 @@
         <!-- Handles OAuth callback -->
         <httpRequestHandler implementation="com.zoho.catalyst_plugin.service.OAuthCallbackService"/>
 
-        <!-- <<< START: New Tool Window Registration >>> -->
-<!--        <toolWindow-->
-<!--                id="Catalyst LSK"-->
-<!--                anchor="right"-->
-<!--                icon="/icons/catalystLskToolWindow.svg"-->
-<!--                factoryClass="com.zoho.catalyst_plugin.toolwindow.CatalystToolWindowFactory"/>-->
-        <!-- <<< END: New Tool Window Registration >>> -->
+        <!-- <<< ADD THIS BLOCK >>> -->
+        <toolWindow
+                id="Catalyst LSK"
+                anchor="right"
+                factoryClass="com.zoho.catalyst_plugin.toolwindow.CatalystToolWindowFactory"/>
+        <!-- <<< END OF BLOCK TO ADD >>> -->
 
         <!-- Settings panel placeholder -->
         <!-- <applicationConfigurable ... /> -->
@@ -54,13 +53,6 @@
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </group>
 
-        <!-- 2. Resolve Action (Appears in the Editor Group) -->
-        <action id="com.zoho.catalyst_plugin.actions.ResolveLskAction"
-                class="com.zoho.catalyst_plugin.actions.ResolveLskAction"
-                text="Resolve LSKs in Selection"
-                description="Resolves LSK placeholders in selected XML via backend.">
-            <add-to-group group-id="com.zoho.catalyst_plugin.EditorActionGroup" anchor="first"/>
-        </action>
 
         <!-- 3. Sign In Action (Appears in Tools Menu) -->
         <action id="com.zoho.catalyst_plugin.actions.SignInAction"
@@ -69,16 +61,6 @@
                 description="Sign in to the Catalyst LSK backend service using GitHub OAuth.">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
-
-        <!-- Optional: Add Sign Out Action here later -->
-        <!--
-        <action id="com.zoho.catalyst_plugin.actions.SignOutAction"
-                class="com.zoho.catalyst_plugin.actions.SignOutAction"
-                text="Catalyst LSK: Sign Out"
-                description="Sign out from the Catalyst LSK backend service.">
-            <add-to-group group-id="ToolsMenu" anchor="after" relative-to-action="com.zoho.catalyst_plugin.actions.SignInAction"/>
-        </action>
-        -->
 
     </actions>
 </idea-plugin>

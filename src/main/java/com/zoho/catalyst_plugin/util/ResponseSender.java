@@ -1,4 +1,4 @@
-package com.zoho.catalyst_plugin.util; // or util
+package com.zoho.catalyst_plugin.util;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -15,8 +15,7 @@ import java.nio.charset.StandardCharsets;
  */
 public final class ResponseSender {
 
-    private ResponseSender() {} // Private constructor for utility class
-
+    private ResponseSender() {}
     public static void sendResponse(@NotNull FullHttpRequest request,
                                     @NotNull ChannelHandlerContext context,
                                     @NotNull HttpResponseStatus status,

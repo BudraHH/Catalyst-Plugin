@@ -1,9 +1,8 @@
-package com.zoho.catalyst_plugin.service; // Use your package name
+package com.zoho.catalyst_plugin.service;
 
 import com.intellij.credentialStore.CredentialAttributes;
 import com.intellij.credentialStore.Credentials;
-// Removed CredentialAttributesKt import as the helper is no longer used
-import com.intellij.ide.passwordSafe.PasswordSafe;   // Recommended way to access secure store
+import com.intellij.ide.passwordSafe.PasswordSafe;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -16,10 +15,7 @@ import org.jetbrains.annotations.Nullable;
 public class AuthService {
     private static final Logger LOG = Logger.getInstance(AuthService.class);
 
-    // Unique service name (e.g., plugin ID) used as a namespace in the secure store.
-    private static final String CREDENTIAL_SERVICE_NAME = "com.zoho.catalyst_plugin"; // Use your plugin ID or similar
-
-    // Key attribute (acts like a username) to store the *backend's session token* under the service name.
+    private static final String CREDENTIAL_SERVICE_NAME = "com.zoho.catalyst_plugin";
     private static final String SESSION_TOKEN_KEY = "BackendApiSessionToken";
 
     private static final AuthService instance = new AuthService();
@@ -37,10 +33,9 @@ public class AuthService {
      * @return CredentialAttributes for accessing the token.
      */
     private CredentialAttributes createCredentialAttributes() {
-        // Use the primary constructor taking serviceName and userName (key)
         return new CredentialAttributes(
-                CREDENTIAL_SERVICE_NAME, // Your unique service namespace
-                SESSION_TOKEN_KEY        // The specific key for the token within your namespace
+                CREDENTIAL_SERVICE_NAME,
+                SESSION_TOKEN_KEY
         );
     }
 
@@ -87,7 +82,6 @@ public class AuthService {
 
         LOG.debug("Attempting to store session token in PasswordSafe for Service='{}', Key='{}'", CREDENTIAL_SERVICE_NAME, SESSION_TOKEN_KEY);
         CredentialAttributes attributes = createCredentialAttributes();
-        // When setting, the 'userName' in the Credentials object should ideally match the key used in attributes.
         Credentials credentials = new Credentials(SESSION_TOKEN_KEY, sessionToken);
 
         try {
@@ -105,7 +99,7 @@ public class AuthService {
         LOG.debug("Attempting to clear stored session token from PasswordSafe for Service='{}', Key='{}'", CREDENTIAL_SERVICE_NAME, SESSION_TOKEN_KEY);
         CredentialAttributes attributes = createCredentialAttributes();
         try {
-            PasswordSafe.getInstance().set(attributes, null); // Setting to null removes
+            PasswordSafe.getInstance().set(attributes, null);
             LOG.info("Session token cleared successfully.");
         } catch (Exception e) {
             LOG.error("Error clearing token in PasswordSafe", e);
